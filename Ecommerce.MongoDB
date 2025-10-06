@@ -1,0 +1,130 @@
+const express = require('express')
+const mongoose = require('mongoose')
+const bodyParser = require('body-parser')
+
+const app = express()
+app.use(bodyParser.json())
+
+// ---------------------- DATABASE CONNECTION ----------------------
+mongoose.connect('mongodb://127.0.0.1:27017/ecommerceCatalogDB', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log('MongoDB Connected'))
+  .catch(err => console.error('Connection Failed:', err))
+
+// ---------------------- SCHEMA DESIGN (NESTED DOCUMENTS) ----------------------
+
+// Variant Schema - each product can have multiple variants
+const variantSchema = new mongoose.Schema({
+    color: String,
+    size: String,
+    price: Number,
+    stock: Number
+})
+
+// Product Schema - each category contains multiple products
+const productSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    description: String,
+    basePrice: { type: Number, required: true },
+    variants: [variantSchema] // nested array of variants
+})
+
+// Category Schema - each category holds multiple products
+const categorySchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    description: String,
+    products: [productSchema] // nested array of products
+})
+
+const Category = mongoose.model('Category', categorySchema)
+
+// ---------------------- CONTROLLER FUNCTIONS ----------------------
+
+// CREATE - Add a new category (with optional products)
+app.post('/api/categories', async (req, res) => {
+    try {
+        const category = new Category(req.body)
+        const saved = await category.save()
+        res.status(201).json(saved)
+    } catch (error) {
+        res.status(400).json({ message: error.message })
+    }
+})
+
+// READ - Get all categories
+app.get('/api/categories', async (req, res) => {
+    try {
+        const categories = await Category.find()
+        res.json(categories)
+    } catch (error) {
+        res.status(500).json({ message: error.message })
+    }
+})
+
+// READ - Get single category by ID
+app.get('/api/categories/:id', async (req, res) => {
+    try {
+        const category = await Category.findById(req.params.id)
+        if (!category) return res.status(404).json({ message: 'Category not found' })
+        res.json(category)
+    } catch (error) {
+        res.status(500).json({ message: error.message })
+    }
+})
+
+// UPDATE - Update category (can also modify nested products)
+app.put('/api/categories/:id', async (req, res) => {
+    try {
+        const updated = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true })
+        if (!updated) return res.status(404).json({ message: 'Category not found' })
+        res.json(updated)
+    } catch (error) {
+        res.status(400).json({ message: error.message })
+    }
+})
+
+// DELETE - Delete category
+app.delete('/api/categories/:id', async (req, res) => {
+    try {
+        const deleted = await Category.findByIdAndDelete(req.params.id)
+        if (!deleted) return res.status(404).json({ message: 'Category not found' })
+        res.json({ message: 'Category deleted successfully' })
+    } catch (error) {
+        res.status(500).json({ message: error.message })
+    }
+})
+
+// ADD PRODUCT to existing category
+app.post('/api/categories/:id/products', async (req, res) => {
+    try {
+        const category = await Category.findById(req.params.id)
+        if (!category) return res.status(404).json({ message: 'Category not found' })
+        category.products.push(req.body)
+        await category.save()
+        res.status(201).json(category)
+    } catch (error) {
+        res.status(400).json({ message: error.message })
+    }
+})
+
+// ADD VARIANT to a specific product within a category
+app.post('/api/categories/:categoryId/products/:productId/variants', async (req, res) => {
+    try {
+        const category = await Category.findById(req.params.categoryId)
+        if (!category) return res.status(404).json({ message: 'Category not found' })
+
+        const product = category.products.id(req.params.productId)
+        if (!product) return res.status(404).json({ message: 'Product not found' })
+
+        product.variants.push(req.body)
+        await category.save()
+        res.status(201).json(category)
+    } catch (error) {
+        res.status(400).json({ message: error.message })
+    }
+})
+
+// ---------------------- SERVER ----------------------
+const PORT = 3000
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`))
